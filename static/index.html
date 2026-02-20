@@ -1,0 +1,237 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Transcrição com Whisper</title>
+    <style>
+      :root {
+        --bg: #0b1020;
+        --card: #141b34;
+        --muted: #9db0ff;
+        --text: #eef2ff;
+        --accent: #7c96ff;
+        --accent-2: #9b7cff;
+        --ok: #2cc98a;
+      }
+
+      * { box-sizing: border-box; }
+
+      body {
+        margin: 0;
+        font-family: Inter, system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+        background: radial-gradient(circle at top right, #1d2754, var(--bg) 60%);
+        color: var(--text);
+        min-height: 100dvh;
+        display: grid;
+        place-items: center;
+        padding: 16px;
+      }
+
+      .app {
+        width: min(560px, 100%);
+        background: rgba(20, 27, 52, 0.92);
+        border: 1px solid rgba(157, 176, 255, 0.25);
+        border-radius: 20px;
+        padding: 18px;
+        box-shadow: 0 20px 60px rgba(0, 0, 0, 0.35);
+        backdrop-filter: blur(8px);
+      }
+
+      h1 {
+        margin: 6px 0 10px;
+        font-size: 1.35rem;
+      }
+
+      p.sub {
+        margin: 0 0 16px;
+        color: var(--muted);
+        font-size: 0.95rem;
+      }
+
+      .upload {
+        border: 1.5px dashed rgba(157, 176, 255, 0.5);
+        border-radius: 14px;
+        padding: 14px;
+        margin-bottom: 12px;
+        background: rgba(124, 150, 255, 0.08);
+      }
+
+      .upload-controls {
+        display: grid;
+        gap: 10px;
+      }
+
+      #audioInput {
+        display: none;
+      }
+
+      #pickAudioBtn {
+        border: 1px solid rgba(157, 176, 255, 0.35);
+        background: rgba(157, 176, 255, 0.18);
+      }
+
+      #selectedFile {
+        color: var(--muted);
+        font-size: 0.9rem;
+      }
+
+      .actions {
+        display: grid;
+        grid-template-columns: 1fr;
+        gap: 10px;
+      }
+
+      button {
+        border: 0;
+        border-radius: 12px;
+        padding: 12px 14px;
+        color: white;
+        font-weight: 700;
+        font-size: 0.95rem;
+        cursor: pointer;
+      }
+
+      #transcribeBtn {
+        background: linear-gradient(90deg, var(--accent), var(--accent-2));
+      }
+
+      #copyBtn, #downloadBtn {
+        background: rgba(157, 176, 255, 0.2);
+        border: 1px solid rgba(157, 176, 255, 0.3);
+      }
+
+      textarea {
+        margin-top: 14px;
+        width: 100%;
+        min-height: 220px;
+        background: rgba(9, 13, 28, 0.9);
+        color: var(--text);
+        border: 1px solid rgba(157, 176, 255, 0.28);
+        border-radius: 12px;
+        padding: 12px;
+        resize: vertical;
+      }
+
+      .status {
+        margin-top: 10px;
+        color: var(--ok);
+        font-size: 0.9rem;
+        min-height: 1.2rem;
+      }
+
+      @media (min-width: 460px) {
+        .actions {
+          grid-template-columns: repeat(3, 1fr);
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main class="app">
+      <h1>🎙️ Transcrição de Áudio (Whisper)</h1>
+      <p class="sub">Escolha seu áudio, transcreva e depois copie tudo ou baixe o arquivo.</p>
+
+      <section class="upload">
+        <div class="upload-controls">
+          <input id="audioInput" type="file" accept="audio/*" />
+          <button id="pickAudioBtn" type="button">Selecionar áudio</button>
+          <div id="selectedFile">Nenhum áudio selecionado.</div>
+        </div>
+      </section>
+
+      <section class="actions">
+        <button id="transcribeBtn" type="button">Transcrever</button>
+        <button id="copyBtn" type="button">Copiar tudo</button>
+        <button id="downloadBtn" type="button">Baixar arquivo</button>
+      </section>
+
+      <textarea id="result" placeholder="Seu texto transcrito aparece aqui..."></textarea>
+      <div id="status" class="status"></div>
+    </main>
+
+    <script>
+      const audioInput = document.getElementById('audioInput');
+      const pickAudioBtn = document.getElementById('pickAudioBtn');
+      const selectedFile = document.getElementById('selectedFile');
+      const transcribeBtn = document.getElementById('transcribeBtn');
+      const copyBtn = document.getElementById('copyBtn');
+      const downloadBtn = document.getElementById('downloadBtn');
+      const result = document.getElementById('result');
+      const statusEl = document.getElementById('status');
+
+      function setStatus(msg, isError = false) {
+        statusEl.textContent = msg;
+        statusEl.style.color = isError ? '#ff7b7b' : '#2cc98a';
+      }
+
+      pickAudioBtn.addEventListener('click', () => {
+        audioInput.click();
+      });
+
+      audioInput.addEventListener('change', () => {
+        const file = audioInput.files?.[0];
+        selectedFile.textContent = file ? `Áudio selecionado: ${file.name}` : 'Nenhum áudio selecionado.';
+      });
+
+      transcribeBtn.addEventListener('click', async () => {
+        const file = audioInput.files?.[0];
+        if (!file) {
+          setStatus('Clique em "Selecionar áudio" antes de transcrever.', true);
+          return;
+        }
+
+        try {
+          setStatus('Transcrevendo... isso pode levar alguns segundos.');
+          transcribeBtn.disabled = true;
+
+          const form = new FormData();
+          form.append('file', file);
+
+          const response = await fetch('/api/transcribe', {
+            method: 'POST',
+            body: form,
+          });
+
+          const payload = await response.json();
+          if (!response.ok) throw new Error(payload.detail || 'Falha ao transcrever.');
+
+          result.value = payload.text;
+          setStatus('Transcrição concluída com sucesso ✅');
+        } catch (err) {
+          setStatus(err.message || 'Erro inesperado ao transcrever.', true);
+        } finally {
+          transcribeBtn.disabled = false;
+        }
+      });
+
+      copyBtn.addEventListener('click', async () => {
+        const text = result.value.trim();
+        if (!text) {
+          setStatus('Não há texto para copiar.', true);
+          return;
+        }
+
+        await navigator.clipboard.writeText(text);
+        setStatus('Todo o texto foi copiado para a área de transferência.');
+      });
+
+      downloadBtn.addEventListener('click', () => {
+        const text = result.value.trim();
+        if (!text) {
+          setStatus('Não há texto para baixar.', true);
+          return;
+        }
+
+        const blob = new Blob([text], { type: 'text/plain;charset=utf-8' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = 'transcricao.txt';
+        a.click();
+        URL.revokeObjectURL(url);
+        setStatus('Arquivo .txt baixado.');
+      });
+    </script>
+  </body>
+</html>
